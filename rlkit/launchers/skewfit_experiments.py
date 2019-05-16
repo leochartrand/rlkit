@@ -105,7 +105,7 @@ def train_vae(variant, return_data=False):
     representation_size = variant["representation_size"]
     generate_vae_dataset_fctn = variant.get('generate_vae_data_fctn',
                                             generate_vae_dataset)
-    train_data, test_data, info = generate_vae_dataset_fctn(
+    train_dataset, test_dataset, info = generate_vae_dataset_fctn(
         variant['generate_vae_dataset_kwargs']
     )
     logger.save_extra_data(info)
@@ -127,36 +127,51 @@ def train_vae(variant, return_data=False):
     variant['vae_kwargs']['architecture'] = architecture
     variant['vae_kwargs']['imsize'] = variant.get('imsize')
 
-    m = ConvVAE(
+    vae_class = variant.get('vae_class', ConvVAE)
+    model = vae_class(
         representation_size,
         decoder_output_activation=decoder_activation,
         **variant['vae_kwargs']
     )
-    m.to(ptu.device)
-    t = ConvVAETrainer(train_data, test_data, m, beta=beta,
+    model.to(ptu.device)
+
+    vae_trainer_class = variant.get('vae_trainer_class', ConvVAETrainer)
+    trainer = vae_trainer_class(model, beta=beta,
                        beta_schedule=beta_schedule, **variant['algo_kwargs'])
     save_period = variant['save_period']
+
     dump_skew_debug_plots = variant.get('dump_skew_debug_plots', False)
     for epoch in range(variant['num_epochs']):
         should_save_imgs = (epoch % save_period == 0)
-        t.train_epoch(epoch)
-        t.test_epoch(
-            epoch,
-            save_reconstruction=should_save_imgs,
-            # save_vae=False,
-        )
+        trainer.train_epoch(epoch, train_dataset)
+        trainer.test_epoch(epoch, test_dataset)
+
         if should_save_imgs:
-            t.dump_samples(epoch)
-        t.update_train_weights()
-    logger.save_extra_data(m, 'vae.pkl', mode='pickle')
+            trainer.dump_reconstructions(epoch)
+            trainer.dump_samples(epoch)
+            if dump_skew_debug_plots:
+                trainer.dump_best_reconstruction(epoch)
+                trainer.dump_worst_reconstruction(epoch)
+                trainer.dump_sampling_histogram(epoch)
+
+        stats = trainer.get_diagnostics()
+        for k, v in stats.items():
+            logger.record_tabular(k, v)
+        logger.dump_tabular()
+        trainer.end_epoch(epoch)
+
+        if epoch % 50 == 0:
+            logger.save_itr_params(epoch, model)
+    logger.save_extra_data(model, 'vae.pkl', mode='pickle')
     if return_data:
-        return m, train_data, test_data
-    return m
+        return model, train_dataset, test_dataset
+    return model
 
 
 def generate_vae_dataset(variant):
+    print(variant)
     env_class = variant.get('env_class', None)
-    env_kwargs = variant.get('env_kwargs', None)
+    env_kwargs = variant.get('env_kwargs',None)
     env_id = variant.get('env_id', None)
     N = variant.get('N', 10000)
     test_p = variant.get('test_p', 0.9)
@@ -166,23 +181,28 @@ def generate_vae_dataset(variant):
     show = variant.get('show', False)
     init_camera = variant.get('init_camera', None)
     dataset_path = variant.get('dataset_path', None)
-    oracle_dataset_using_set_to_goal = variant.get(
-        'oracle_dataset_using_set_to_goal', False)
+    oracle_dataset_using_set_to_goal = variant.get('oracle_dataset_using_set_to_goal', False)
     random_rollout_data = variant.get('random_rollout_data', False)
-    random_and_oracle_policy_data = variant.get('random_and_oracle_policy_data',
-                                                False)
-    random_and_oracle_policy_data_split = variant.get(
-        'random_and_oracle_policy_data_split', 0)
+    random_and_oracle_policy_data=variant.get('random_and_oracle_policy_data', False)
+    random_and_oracle_policy_data_split=variant.get('random_and_oracle_policy_data_split', 0)
     policy_file = variant.get('policy_file', None)
     n_random_steps = variant.get('n_random_steps', 100)
-    vae_dataset_specific_env_kwargs = variant.get(
-        'vae_dataset_specific_env_kwargs', None)
+    vae_dataset_specific_env_kwargs = variant.get('vae_dataset_specific_env_kwargs', None)
     save_file_prefix = variant.get('save_file_prefix', None)
-    non_presampled_goal_img_is_garbage = variant.get(
-        'non_presampled_goal_img_is_garbage', None)
+    non_presampled_goal_img_is_garbage = variant.get('non_presampled_goal_img_is_garbage', None)
+
+    conditional_vae_dataset = variant.get('conditional_vae_dataset', False)
+    use_linear_dynamics = variant.get('use_linear_dynamics', False)
+    save_trajectories = variant.get('save_trajectories', False)
+    save_trajectories = save_trajectories or use_linear_dynamics or conditional_vae_dataset
+
     tag = variant.get('tag', '')
+
     from multiworld.core.image_env import ImageEnv, unormalize_image
     import rlkit.torch.pytorch_util as ptu
+    from rlkit.data_management.dataset  import \
+        TrajectoryDataset, ImageObservationDataset, InitialObservationDataset
+
     info = {}
     if dataset_path is not None:
         dataset = load_local_or_remote_file(dataset_path)
@@ -197,7 +217,7 @@ def generate_vae_dataset(variant):
         filename = "/tmp/{}_N{}_{}_imsize{}_random_oracle_split_{}{}.npy".format(
             save_file_prefix,
             str(N),
-            init_camera.__name__ if init_camera else '',
+            init_camera.__name__ if init_camera and hasattr(init_camera, '__name__') else '',
             imsize,
             random_and_oracle_policy_data_split,
             tag,
@@ -239,14 +259,20 @@ def generate_vae_dataset(variant):
                 policy = policy_file['policy']
                 policy.to(ptu.device)
             if random_rollout_data:
-                from rlkit.exploration_strategies.ou_strategy import OUStrategy
+                from railrl.exploration_strategies.ou_strategy import OUStrategy
                 policy = OUStrategy(env.action_space)
-            dataset = np.zeros((N, imsize * imsize * num_channels),
-                               dtype=np.uint8)
+
+            if save_trajectories:
+                dataset = {
+                    'observations': np.zeros((N // n_random_steps, n_random_steps, imsize * imsize * num_channels), dtype=np.uint8),
+                    'actions': np.zeros((N // n_random_steps, n_random_steps, env.action_space.shape[0]), dtype=np.uint8)
+                    }
+            else:
+                dataset = np.zeros((N, imsize * imsize * num_channels), dtype=np.uint8)
+
             for i in range(N):
                 if random_and_oracle_policy_data:
-                    num_random_steps = int(
-                        N * random_and_oracle_policy_data_split)
+                    num_random_steps = int(N*random_and_oracle_policy_data_split)
                     if i < num_random_steps:
                         env.reset()
                         for _ in range(n_random_steps):
@@ -268,20 +294,28 @@ def generate_vae_dataset(variant):
                     obs = env._get_obs()
                 elif random_rollout_data:
                     if i % n_random_steps == 0:
-                        g = dict(
-                            state_desired_goal=env.sample_goal_for_rollout())
+                        g = dict(state_desired_goal=env.sample_goal())
                         env.set_to_goal(g)
                         policy.reset()
                         # env.reset()
-                    u = policy.get_action_from_raw_action(
-                        env.action_space.sample())
-                    obs = env.step(u)[0]
+                        env.reset()
+                    obs = env._get_obs()
+                    u = policy.get_action_from_raw_action(env.action_space.sample())
+                    env.step(u)
                 else:
                     env.reset()
                     for _ in range(n_random_steps):
                         obs = env.step(env.action_space.sample())[0]
+
                 img = obs['image_observation']
-                dataset[i, :] = unormalize_image(img)
+
+                if save_trajectories:
+                    #MAKE SURE NOT ONE INDEX
+                    dataset['observations'][i // n_random_steps, i % n_random_steps, :] = unormalize_image(img)
+                    dataset['actions'][i // n_random_steps, i % n_random_steps, :] = u
+                else:
+                    dataset[i, :] = unormalize_image(img)
+
                 if show:
                     img = img.reshape(3, imsize, imsize).transpose()
                     img = img[::-1, :, ::-1]
@@ -289,11 +323,33 @@ def generate_vae_dataset(variant):
                     cv2.waitKey(1)
                     # radius = input('waiting...')
             print("done making training data", filename, time.time() - now)
+
             np.save(filename, dataset)
 
-    n = int(N * test_p)
-    train_dataset = dataset[:n, :]
-    test_dataset = dataset[n:, :]
+    if use_linear_dynamics:
+        num_trajectories = N // n_random_steps
+        n = int(num_trajectories * test_p)
+        train_dataset = TrajectoryDataset({
+            'observations': dataset['observations'][:n, :, :],
+            'actions': dataset['actions'][:n, :, :]
+        })
+        test_dataset = TrajectoryDataset({
+            'observations': dataset['observations'][n:, :, :],
+            'actions': dataset['actions'][n:, :, :]
+        })
+    elif conditional_vae_dataset:
+        num_trajectories = N // n_random_steps
+        n = int(num_trajectories * test_p)
+        train_dataset = InitialObservationDataset({
+            'observations': dataset['observations'][:n, :, :],
+        })
+        test_dataset = InitialObservationDataset({
+            'observations': dataset['observations'][n:, :, :],
+        })
+    else:
+        n = int(N * test_p)
+        train_dataset = ImageObservationDataset(dataset[:n, :])
+        test_dataset = ImageObservationDataset(dataset[n:, :])
     return train_dataset, test_dataset, info
 
 
@@ -508,8 +564,6 @@ def skewfit_experiment(variant):
         **variant['replay_buffer_kwargs']
     )
     vae_trainer = ConvVAETrainer(
-        variant['vae_train_data'],
-        variant['vae_test_data'],
         env.vae,
         **variant['online_vae_trainer_kwargs']
     )
