@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import copy
 
 import json
 from pprint import pprint
@@ -7,7 +8,7 @@ try:
     import rllab.viskit.core as core
 except:
     import viskit.core as core
-from rllab.misc import ext
+from rlkit.util.variant_generator import AttrDict
 
 read_tb = lambda: None
 import glob
@@ -81,7 +82,8 @@ def load_exps(dirnames, filter_fn=true_fn, suppress_output=False, progress_filen
             good_exps.append(e)
     return good_exps
 
-def load_exps_data_numpy(exp_folder_paths, log_reader, disable_variant=False, progress_filename="progress.csv", ):
+def load_exps_data_numpy(exp_folder_paths, log_reader, disable_variant=False,
+        progress_filename="progress.csv", params_filename="variant.json"):
     exps = []
     for exp_folder_path in exp_folder_paths:
         exps += [x[0] for x in os.walk(exp_folder_path)]
@@ -89,9 +91,8 @@ def load_exps_data_numpy(exp_folder_paths, log_reader, disable_variant=False, pr
     for exp in exps:
         try:
             exp_path = exp
-            # params_json_path = os.path.join(exp_path, "params.json")
             params_json_path = os.path.join(exp_path, "params.pkl")
-            variant_json_path = os.path.join(exp_path, "variant.json")
+            variant_json_path = os.path.join(exp_path, params_filename)
             progress_csv_path = os.path.join(exp_path, progress_filename)
             progress = log_reader.read_log(exp_path, progress_csv_path)
             if disable_variant:
@@ -101,7 +102,7 @@ def load_exps_data_numpy(exp_folder_paths, log_reader, disable_variant=False, pr
                     params = core.load_params(variant_json_path)
                 except IOError:
                     params = core.load_params(params_json_path)
-            exps_data.append(ext.AttrDict(
+            exps_data.append(AttrDict(
                 progress=progress, params=params, flat_params=core.flatten_dict(params)))
         except IOError as e:
             print(e)
@@ -177,14 +178,23 @@ def filter_exps(exps, filter_fn):
             good_exps.append(e)
     return good_exps
 
-def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figsize=(5, 3.5),
-    xlabel=None, default_vary=False, xlim=None, ylim=None,
-    print_final=False, print_start=False, print_max=False, print_min=False, print_plot=True, print_legend=True,
-    reduce_op=sum, method_order=None, remap_keys={},
-    label_to_color=None, return_data=False, bar_plot=False, label_include_key=True,
-    plot_error_bars=True, plot_seeds=False, overlay=False,
-    formatting_func=None,
-):
+def comparison(*args, **kwargs):
+    fig = plt.figure()
+    ax = plt.axes()
+    return _comparison(ax=ax, *args, **kwargs)
+
+def _comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn,
+        figsize=(5, 3.5),
+        xlabel=None, default_vary=False, xlim=None, ylim=None,
+        print_final=False, print_start=False, print_max=False, print_min=False,
+        print_plot=True, print_legend=True,
+        reduce_op=sum, method_order=None, remap_keys={},
+        label_to_color=None, return_data=False, bar_plot=False,
+        label_include_key=True,
+        plot_error_bars=True, plot_seeds=False, overlay=False,
+        formatting_func=None, ax=None,
+        print_on_missing_key=True,
+    ):
     """exps is result of core.load_exps_data
     key is (what we might think is) the effect variable
     vary is (what we might think is) the causal variable
@@ -194,14 +204,14 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
             label_suffix = key
         else:
             label_suffix = ""
-            plt.figure(figsize=figsize)
-            plt.title("Vary " + " ".join(vary))
+            # plt.figure(figsize=figsize)
+            ax.set_title("Vary " + " ".join(vary))
         if not bar_plot:
-            plt.ylabel(key)
+            ax.set_ylabel(key)
         if xlim:
-            plt.xlim(xlim)
+            ax.set_xlim(xlim)
         if ylim:
-            plt.ylim(ylim)
+            ax.set_ylim(ylim)
 
     y_data = {}
     x_data = {}
@@ -242,7 +252,7 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
                     y = d[key]
                 else:
                     print("not found", key)
-                    print(d.keys())
+                    print(d.keys()) if print_on_missing_key else None
                     continue
 
             is_not_nan = np.logical_not(np.isnan(y))
@@ -266,6 +276,8 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
     if method_order:
         labels = np.array(labels)[np.array(method_order)]
     for label in labels:
+        if not len(ys):
+            return []
         ys = to_array(y_data[label])
         x = np.nanmean(to_array(x_data[label]), axis=0)
         y = np.nanmean(ys, axis=0)
@@ -281,14 +293,14 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
                 color = label_to_color[label_without_vary_prefix]
                 plot_kwargs["color"] = color
             if plot_error_bars:
-                plt.fill_between(x, y-1.96*s, y+1.96*s, alpha=0.1, **plot_kwargs)
-            line, = plt.plot(x, y, label=str(label) + label_suffix, **plot_kwargs)
+                ax.fill_between(x, y-1.96*s, y+1.96*s, alpha=0.1, **plot_kwargs)
+            line, = ax.plot(x, y, label=str(label) + label_suffix, **plot_kwargs)
             lines.append(line)
 
             if plot_seeds:
                 color = line.get_color()
                 for i in range(len(ys)):
-                    plt.plot(x, ys[i, :], color=color, alpha=0.25)
+                    ax.plot(x, ys[i, :], color=color, alpha=0.25)
 
         if print_start:
             print(label, y[0])
@@ -304,8 +316,8 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
                 print(label, i, y[i])
 
     if bar_plot:
-        plt.figure(figsize=figsize)
-        plt.title("Vary " + " ".join(vary))
+        ax.figure(figsize=figsize)
+        ax.title("Vary " + " ".join(vary))
         values = []
         stds = []
         for label in labels:
@@ -315,16 +327,16 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
             s = np.nanstd(ys, axis=0) / (len(ys) ** 0.5)
             values.append(y[-1])
             stds.append(s[-1])
-        plt.barh(range(len(values)), values, 0.5, xerr=stds)
-        plt.yticks(range(len(values)), labels, )
-        plt.ylim(-0.5, len(values) - 0.5)
-        plt.xlabel(key)
+        ax.barh(range(len(values)), values, 0.5, xerr=stds)
+        ax.yticks(range(len(values)), labels, )
+        ax.ylim(-0.5, len(values) - 0.5)
+        ax.xlabel(key)
 
     if print_legend:
-        plt.legend(handles=lines, bbox_to_anchor=(1.0, 0.75))
+        ax.legend(handles=lines, bbox_to_anchor=(1.0, 0.75))
 
     if formatting_func:
-        plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(formatting_func))
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(formatting_func))
 
     if return_data:
         return xs, ys
@@ -332,25 +344,27 @@ def comparison(exps, key, vary = ["expdir"], f=true_fn, smooth=identity_fn, figs
     return lines
 
 def split(exps,
-    keys,
-    vary = "expdir",
-    split=[],
-    f=true_fn,
-    w="evaluator",
-    smooth=identity_fn,
-    figsize=(5, 3),
-    suppress_output=False,
-    xlabel=None,
-    default_vary=False,
-    xlim=None, ylim=None,
-    print_final=False, print_max=False, print_min=False, print_plot=True,
-    split_fig=False,
-    **kwargs):
+        keys,
+        vary = "expdir",
+        split=[],
+        f=true_fn,
+        w="evaluator",
+        smooth=identity_fn,
+        figsize=(5, 3),
+        print_final=False, print_max=False, print_min=False, print_plot=True,
+        split_fig=False,
+        default_vary=None,
+        num_x_plots=1,
+        **kwargs
+    ):
+
+    default_vary = {} if default_vary is None else default_vary
 
     split_values = {}
     for s in split:
         split_values[s] = set()
     for l in exps:
+        l = copy.deepcopy(l)
         for k in l['flat_params']:
             l['flat_params'][k] = str(l['flat_params'][k])
         if f(l):
@@ -370,22 +384,34 @@ def split(exps,
         for v in split_values[s]:
             c.append((s, v))
         configurations.append(c)
-    for c in itertools.product(*configurations):
+
+    configs = list(itertools.product(*configurations))
+    total_plots = len(configs) * len(keys)
+    num_y_plots = (total_plots - 1) // num_x_plots + 1
+    new_figsize = (figsize[0] * num_x_plots, figsize[1] * num_y_plots, )
+    fig, axs = plt.subplots(num_y_plots, num_x_plots, figsize=new_figsize)
+    axs = np.array([axs]).flatten()
+    i = 0
+    for c in configs:
         if split_fig:
             plt.figure(figsize=figsize)
-        fsplit = lambda exp: all([exp['flat_params'][k] == v for k, v in c]) and f(exp)
+        fsplit = lambda exp: all([str(exp['flat_params'][k]) == v for k, v in c]) and f(exp)
         # for exp in exps:
         #     print(fsplit(exp), exp['flat_params'])
         lines = []
         for key in keys:
+            ax = axs[i]
+            i += 1
             if print_final or print_max or print_min:
                 print(key, c)
-            lines += comparison(exps, key, vary, f=fsplit, smooth=smooth,
-                figsize=figsize, xlabel=xlabel, default_vary=default_vary, xlim=xlim, ylim=ylim,
-                print_final=print_final, print_max=print_max, print_min=print_min, print_plot=print_plot,
+            lines += _comparison(exps, key, vary, f=fsplit, smooth=smooth,
+                figsize=figsize,
+                print_final=print_final,
+                print_max=print_max, print_min=print_min,
+                print_plot=print_plot, ax=ax, default_vary=default_vary,
                 **kwargs)
             if print_plot:
-                plt.title(prettify_configuration(c) + " Vary " + " ".join(vary))
+                ax.set_title(prettify_configuration(c) + " Vary " + " ".join(vary))
         if split_fig:
             plt.legend(handles=lines, bbox_to_anchor=(1.0, 0.75))
 
@@ -537,3 +563,4 @@ def number_M_format_func(value, tick_number):
 
 def format_func_epoch(value, tick_number):
     return(str(int(value)) + 'K')
+
