@@ -90,7 +90,7 @@ from collections import OrderedDict
 from multiworld.core.image_env import ImageEnv, unormalize_image
 import multiworld
 
-from rlkit.launchers.contextual.rig.model_train_launcher import train_vae
+from rlkit.torch.grill.common import train_vae
 from rlkit.torch.gan.bigan import CVBiGAN
 from rlkit.torch.vae.vq_vae import CCVAE
 
