@@ -10,7 +10,7 @@ DIR_AND_MOUNT_POINT_MAPPINGS = [
         mount_point='/root/.mujoco',
     ),
 ]
-LOCAL_LOG_DIR = '/home/ashvin/data/s3doodad'
+LOCAL_LOG_DIR = '/media/ashvin/s3doodad'
 RUN_DOODAD_EXPERIMENT_SCRIPT_PATH = (
     '/home/ashvin/code/rlkit/scripts/run_experiment_from_doodad.py'
 )

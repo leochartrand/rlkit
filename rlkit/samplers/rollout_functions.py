@@ -1,7 +1,6 @@
 from functools import partial
 
 import numpy as np
-import copy
 
 create_rollout_function = partial
 
@@ -45,7 +44,7 @@ def multitask_rollout(
 def contextual_rollout(
         env,
         agent,
-        observation_key=None,
+        observation_keys=None,
         context_keys_for_policy=None,
         obs_processor=None,
         **kwargs
@@ -55,7 +54,7 @@ def contextual_rollout(
 
     if not obs_processor:
         def obs_processor(o):
-            combined_obs = [o[observation_key]]
+            combined_obs = [o[k] for k in observation_keys]
             for k in context_keys_for_policy:
                 combined_obs.append(o[k])
             return np.concatenate(combined_obs, axis=0)
@@ -110,7 +109,7 @@ def rollout(
         if full_o_postprocess_func:
             full_o_postprocess_func(env, agent, o)
 
-        next_o, r, d, env_info = env.step(copy.deepcopy(a))
+        next_o, r, d, env_info = env.step(a.copy())
         if render:
             env.render(**render_kwargs)
         observations.append(o)

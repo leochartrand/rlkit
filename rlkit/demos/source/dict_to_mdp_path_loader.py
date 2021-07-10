@@ -18,9 +18,12 @@ import random
 from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.data_management.path_builder import PathBuilder
 
+from rlkit.launchers.config import LOCAL_LOG_DIR, AWS_S3_PATH
+
 from rlkit.core import logger
 
 import glob
+
 
 class DictToMDPPathLoader:
     """
@@ -34,7 +37,7 @@ class DictToMDPPathLoader:
             replay_buffer,
             demo_train_buffer,
             demo_test_buffer,
-            demo_paths=[], # list of dicts
+            demo_paths=None, # list of dicts
             demo_train_split=0.9,
             demo_data_split=1,
             add_demos_to_replay_buffer=True,
@@ -49,19 +52,21 @@ class DictToMDPPathLoader:
             env_info_key=None,
             obs_key=None,
             load_terminals=True,
-
+            delete_after_loading=False,
+            data_filter_fn=lambda x: True, # Return true to add path, false to ignore it
             **kwargs
     ):
         self.trainer = trainer
-
+        self.delete_after_loading = delete_after_loading
         self.add_demos_to_replay_buffer = add_demos_to_replay_buffer
         self.demo_train_split = demo_train_split
         self.demo_data_split = demo_data_split
         self.replay_buffer = replay_buffer
         self.demo_train_buffer = demo_train_buffer
         self.demo_test_buffer = demo_test_buffer
+        self.data_filter_fn = data_filter_fn
 
-        self.demo_paths = demo_paths
+        self.demo_paths = [] if demo_paths is None else demo_paths
 
         self.bc_num_pretrain_steps = bc_num_pretrain_steps
         self.q_num_pretrain_steps = q_num_pretrain_steps
@@ -77,6 +82,9 @@ class DictToMDPPathLoader:
         self.trainer.demo_test_buffer = self.demo_test_buffer
 
     def load_path(self, path, replay_buffer, obs_dict=None):
+        # Filter data #
+        if not self.data_filter_fn(path): return
+
         rewards = []
         path_builder = PathBuilder()
 
@@ -142,7 +150,11 @@ class DictToMDPPathLoader:
         data = []
 
         for filename in paths:
-            data.extend(list(load_local_or_remote_file(filename)))
+            data.extend(list(load_local_or_remote_file(filename, delete_after_loading=self.delete_after_loading)))
+
+        # if not is_demo:
+            # data = [data]
+        # random.shuffle(data)
 
         if train_split is None:
             train_split = self.demo_train_split
@@ -168,4 +180,3 @@ class DictToMDPPathLoader:
         batch = replay_buffer.random_batch(self.bc_batch_size)
         batch = np_to_pytorch_batch(batch)
         return batch
-
