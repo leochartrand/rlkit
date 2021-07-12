@@ -552,6 +552,7 @@ def awac_rig_experiment(
         )
         algorithm.post_train_funcs.append(eval_video_func)
 
+    print("log dir", logger.get_snapshot_dir())
     #AWAC CODE
     if save_paths:
         algorithm.post_train_funcs.append(save_paths)

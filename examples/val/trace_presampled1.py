@@ -1,5 +1,5 @@
-import rlkit.util.hyperparameter as hyp
-from rlkit.demos.source.encoder_dict_to_mdp_path_loader import EncoderDictToMDPPathLoader
+import rlkit.misc.hyperparameter as hyp
+from rlkit.demos.source.dict_to_mdp_path_loader import EncoderDictToMDPPathLoader
 from rlkit.launchers.experiments.ashvin.awac_rig import awac_rig_experiment, process_args
 from rlkit.launchers.launcher_util import run_experiment
 from rlkit.launchers.arglauncher import run_variants
@@ -12,7 +12,8 @@ from rlkit.torch.vae.vq_vae import VQ_VAE
 from rlkit.torch.vae.vq_vae_trainer import VQ_VAETrainer
 from rlkit.torch.grill.common import train_vqvae
 
-demo_paths=[dict(path='sasha/affordances/combined/drawer_demos_0.pkl', obs_dict=True, is_demo=True),
+demo_paths=[
+    dict(path='sasha/affordances/combined/drawer_demos_0.pkl', obs_dict=True, is_demo=True),
             # dict(path='sasha/affordances/combined/drawer_demos_1.pkl', obs_dict=True, is_demo=True),
             # dict(path='sasha/affordances/combined/pnp_demos_0.pkl', obs_dict=True, is_demo=True),
             # dict(path='sasha/affordances/combined/tray_demos_0.pkl', obs_dict=True, is_demo=True),
@@ -42,7 +43,7 @@ pnp_goals = 'sasha/presampled_goals/affordances/combined/pnp_goals.pkl'
 top_drawer_goals = 'sasha/presampled_goals/affordances/combined/top_drawer_goals.pkl'
 bottom_drawer_goals = 'sasha/presampled_goals/affordances/combined/bottom_drawer_goals.pkl'
 
-vqvae = "ashvin/valreproduce/combined1/run5/id0/best_vqvae.pt"
+#vqvae = 'sasha/affordances/combined/best_vqvae.pt'
 
 if __name__ == "__main__":
     variant = dict(
@@ -126,11 +127,10 @@ if __name__ == "__main__":
         reset_keys_map=dict(
             image_observation="initial_latent_state"
         ),
-        pretrained_vae_path=vqvae,
+        pretrained_vae_path="ashvin/valreproduce/combined1/run5/id0/best_vqvae.pt",
 
         path_loader_class=EncoderDictToMDPPathLoader,
         path_loader_kwargs=dict(
-            delete_after_loading=True,
             recompute_reward=True,
             demo_paths=demo_paths,
         ),
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         pretrain_rl=True,
 
         evaluation_goal_sampling_mode="presampled_images",
-        exploration_goal_sampling_mode="presample_latents",
+        exploration_goal_sampling_mode="presampled_latents",
 
         train_vae_kwargs=dict(
             imsize=48,
@@ -178,7 +178,6 @@ if __name__ == "__main__":
                 oracle_dataset=False,
                 oracle_dataset_using_set_to_goal=False,
                 non_presampled_goal_img_is_garbage=False,
-                delete_after_loading=True,
                 random_rollout_data=True,
                 random_rollout_data_set_to_goal=True,
                 conditional_vae_dataset=True,
@@ -213,11 +212,12 @@ if __name__ == "__main__":
             ),
 
             save_period=50,
+            pixelcnn_kwargs=dict(),
         ),
         train_model_func=train_vqvae,
         presampled_goal_kwargs=dict(
             eval_goals='', #HERE
-            expl_goals='',
+            expl_goals="ashvin/valreproduce/trace2/run103/id0/presampled_goals.pkl",
         ),
         launcher_config=dict(
             unpack_variant=True,
@@ -232,7 +232,7 @@ if __name__ == "__main__":
         'reward_kwargs.epsilon': [3.5, 4.0], #3.5, 4.0, 4.5, 5.0, 5.5, 6.0
 
         'trainer_kwargs.beta': [0.3],
-        # 'num_pybullet_objects':[None],
+        'num_pybullet_objects':[None],
         'policy_kwargs.min_log_std': [-6],
         'trainer_kwargs.awr_weight': [1.0],
         'trainer_kwargs.awr_use_mle_for_vf': [True, ],
@@ -263,4 +263,4 @@ if __name__ == "__main__":
 
         variants.append(variant)
 
-    run_variants(awac_rig_experiment, variants, run_id=0, process_args_fn=process_args) #HERE
+    run_variants(awac_rig_experiment, variants, run_id=52, process_args_fn=process_args) #HERE
