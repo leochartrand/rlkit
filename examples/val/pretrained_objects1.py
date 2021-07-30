@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
         observation_key='latent_observation',
         desired_goal_key='latent_desired_goal',
-        save_video=True,
+        save_video=False,
         save_video_kwargs=dict(
             save_video_period=25,
             pad_color=0,
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     search_space = {
         "seed": range(1),
 
-        'env_type': ['tray', 'pnp'],
+        'env_type': ['pnp'], # ['tray', 'pnp'],
         'env_kwargs.object_subset': [['camera'], ['mug'], ['long_sofa'], ['grill_trash_can'], ['beer_bottle']],
         'reward_kwargs.epsilon': [3.5],
 

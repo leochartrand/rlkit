@@ -90,12 +90,13 @@ def train_vqvae(variant):
 
 def train_vae(variant, return_data=False):
     from rlkit.util.ml_util import PiecewiseLinearSchedule, ConstantSchedule
-    from rlkit.torch.vae.conv_vae import (
-        ConvVAE,
-        ConvDynamicsVAE,
-        SpatialAutoEncoder,
-        AutoEncoder,
-    )
+    from rlkit.torch.vae.conv_vae import ConvVAE
+    # from rlkit.torch.vae.conv_vae import (
+    #     ConvVAE,
+    #     ConvDynamicsVAE,
+    #     SpatialAutoEncoder,
+    #     AutoEncoder,
+    # )
     import rlkit.torch.vae.conv_vae as conv_vae
     from rlkit.torch.vae.vae_trainer import ConvVAETrainer
     from rlkit.core import logger
