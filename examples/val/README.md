@@ -5,8 +5,7 @@ Paper: http://arxiv.org/abs/2106.00671
 Website: https://sites.google.com/view/val-rl
 
 ### Repos
-- bullet-manipulation: https://github.com/JannerM/bullet-manipulation
-- bullet-objects: https://github.com/Alacarter/bullet-objects
+- bullet-manipulation: https://github.com/anair13/bullet-manipulation-affordances
 
 ### Branches
 - bullet-manipulation: rig_affordances
